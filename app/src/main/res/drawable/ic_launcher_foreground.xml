@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Outer measurement frame -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M24,24v60h60v-60h-60z M28,28h52v52h-52v-52z" />
+
+    <!-- Ruler marks Top -->
+    <path android:fillColor="#FFFFFF" android:pathData="M34,24v6 M44,24v10 M54,24v6 M64,24v10 M74,24v6" />
+    <!-- Ruler marks Bottom -->
+    <path android:fillColor="#FFFFFF" android:pathData="M34,78v6 M44,74v10 M54,78v6 M64,74v10 M74,78v6" />
+    <!-- Ruler marks Left -->
+    <path android:fillColor="#FFFFFF" android:pathData="M24,34h6 M24,44h10 M24,54h6 M24,64h10 M24,74h6" />
+    <!-- Ruler marks Right -->
+    <path android:fillColor="#FFFFFF" android:pathData="M78,34h6 M74,44h10 M78,54h6 M74,64h10 M78,74h6" />
+
+    <!-- Inner Crosshair / Grid Center -->
+    <path
+        android:fillColor="#81D4FA"
+        android:pathData="M52,53.5h4v1h-4z M53.5,52h1v4h-1z" />
+
+    <!-- Corners focus marks -->
+    <path
+        android:fillColor="#81D4FA"
+        android:pathData="M24,24 h12 v4 h-8 v8 h-4 z M72,24 h12 v12 h-4 v-8 h-8 z M24,72 v12 h12 v-4 h-8 v-8 z M72,84 h12 v-12 h-4 v8 h-8 z" />
+</vector>

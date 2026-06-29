@@ -1,0 +1,4 @@
+<resources>
+
+    <style name="Theme.ThuocDo" parent="Theme.MaterialComponents.Light" />
+</resources>

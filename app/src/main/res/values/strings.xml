@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Thước đo màn hình</string>
+    <string name="desc_bubble">Measurement Bubble</string>
+    <string name="desc_close">Close Service</string>
+</resources>
