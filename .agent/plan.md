@@ -78,3 +78,21 @@ A specialized Android utility designed for developers and power users to accurat
   - Measurement flow works on home screen
 - **Duration:** 27m 59s
 
+### Hoàn thiện tương tác Thước đo – Kéo dài thước & di chuyển vùng đo – 16/08/2026
+- File thay đổi: `app/src/main/java/com/quangthe/thuocdo/ui/overlay/RulerComponent.kt`, `model/RulerState.kt`, `data/RulerRepository.kt`
+- Chi tiết:
+  - Thay thế `detectDragGestures` + `detectTransformGestures` (xung đột pointer) bằng 1 gesture thống nhất `awaitEachGesture`: 1 ngón kéo theo mode, 2 ngón pinch-zoom/xoay không bị chặn khi chạm vào thước.
+  - Thêm mode `MODE_MOVE_H/MODE_MOVE_V`: kéo giữa vùng tô xanh để di chuyển cả vùng đo (trước đây kéo xanh chỉ di chuyển toàn bộ thước).
+  - Sửa `MODE_RESIZE_H/V` (kéo dài thước): giảm mặc định `barLength` 600→320 (đầu thước trước đây nằm NGOÀI màn hình nên không kéo được), tăng độ ưu tiên vùng chạm đầu thước, chặn `barLength < selection`.
+  - Thêm `normalizeState` để chuẩn hoá bounds khi load.
+  - Vẽ thêm chấm giữa vùng xanh (chỉ dẫn kéo di chuyển) + làm rõ tay cầm đầu thước.
+- Build: `:app:assembleDebug` SUCCESS.
+
+### Cải thiện cảm giác kéo & Định hướng thước + hiện số đo góc – 16/08/2026
+- File thay đổi: `app/src/main/java/com/quangthe/thuocdo/ui/overlay/RulerComponent.kt`, `app/src/main/java/com/quangthe/thuocdo/MainActivity.kt`
+- Chi tiết:
+  - **Cảm giác di chuyển**: chuyển từ cộng dồn delta (`lastX/lastY`) sang **anchor tuyệt đối** (`startPos` + `startHX/HY`) cho các mode di chuyển (MODE_NONE/DRAG_H/DRAG_V) → thước bám ngón tay 1:1, không rung/tụt khi frame rớt. Các mode co dãn/handles dùng delta `position - previousPosition` cho chính xác.
+  - **Cài đặt "Định hướng thước"**: thêm Card trong `MainActivity` (Tự do / Nằm ngang / Thẳng đứng) → `viewModel.updateFixedOrientation` (0/1/2). Khi `numRulers == 1`: thước bị khoá 0° hoặc 90° (không xoay được, tự snap khi đổi setting — bổ sung `fixedOrientation` vào key `remember` + snap trong `normalizeState`).
+  - **Hiện số đo góc màu đỏ**: vẽ góc thực tế của từng cây thước (như `0°`, `90°`) bằng chữ đỏ `#E91E63` in nghiêng trên thước (giống bản Custom View cũ).
+- Build: `:app:assembleDebug` SUCCESS.
+

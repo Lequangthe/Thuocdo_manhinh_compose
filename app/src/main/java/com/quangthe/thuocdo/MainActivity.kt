@@ -1,17 +1,15 @@
 package com.quangthe.thuocdo
 
-import android.Manifest
+import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
-import android.content.SharedPreferences
-import android.content.pm.PackageManager
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -26,60 +24,58 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat
-import androidx.core.content.edit
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.quangthe.thuocdo.service.OverlayService
+import com.quangthe.thuocdo.ui.RulerViewModel
 import com.quangthe.thuocdo.ui.theme.ThuocDoTheme
+import dagger.hilt.android.AndroidEntryPoint
 
+@AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+    
+    private val viewModel: RulerViewModel by viewModels()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
             ThuocDoTheme {
-                MainScreen()
+                MainScreen(viewModel)
             }
         }
     }
 }
 
-@Composable
-fun MainScreen() {
-    val context = LocalContext.current
-    val rulerPrefs = remember { context.getSharedPreferences("ruler_prefs", Context.MODE_PRIVATE) }
-    
-    var hasOverlayPermission by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
-    var isServiceRunning by remember { mutableStateOf(false) }
-    
-    // Đồng bộ các giá trị từ SharedPreferences khi chúng thay đổi từ phía Overlay
-    var rulerScale by remember { mutableFloatStateOf(rulerPrefs.getFloat("sc", 1.0f)) }
-    
-    DisposableEffect(rulerPrefs) {
-        val listener = SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
-            if (key == "sc") {
-                rulerScale = prefs.getFloat("sc", 1.0f)
-            }
-        }
-        rulerPrefs.registerOnSharedPreferenceChangeListener(listener)
-        onDispose {
-            rulerPrefs.unregisterOnSharedPreferenceChangeListener(listener)
+private fun isServiceRunning(context: Context): Boolean {
+    val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+    @Suppress("DEPRECATION")
+    for (service in manager.getRunningServices(Int.MAX_VALUE)) {
+        if (OverlayService::class.java.name == service.service.className) {
+            return true
         }
     }
+    return false
+}
 
-    val lifecycleOwner = LocalLifecycleOwner.current
+@Composable
+fun MainScreen(viewModel: RulerViewModel) {
+    val context = LocalContext.current
+    val uiState by viewModel.uiState.collectAsState()
+    
+    var hasOverlayPermission by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
+    var isServiceActive by remember { mutableStateOf(isServiceRunning(context)) }
+    
+    // Đồng bộ lại trạng thái quyền và service khi quay lại app
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
                 hasOverlayPermission = Settings.canDrawOverlays(context)
+                isServiceActive = isServiceRunning(context)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -123,38 +119,31 @@ fun MainScreen() {
                             }
                             Column {
                                 Text("Dịch vụ Bong bóng nổi", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                                Text(if (isServiceRunning) "Dịch vụ đang Chạy" else "Dịch vụ đã Dừng", style = MaterialTheme.typography.bodySmall, fontStyle = FontStyle.Italic, color = if (isServiceRunning) Color.Gray else Color.Red)
+                                Text(if (isServiceActive) "Dịch vụ đang Chạy" else "Dịch vụ đã Dừng", style = MaterialTheme.typography.bodySmall, fontStyle = FontStyle.Italic, color = if (isServiceActive) Color(0xFF4CAF50) else Color.Red)
                             }
                         }
                         Switch(
-                            checked = isServiceRunning,
+                            checked = isServiceActive,
                             onCheckedChange = {
                                 if (it) {
                                     if (hasOverlayPermission) {
                                         context.startService(Intent(context, OverlayService::class.java))
-                                        isServiceRunning = true
+                                        isServiceActive = true
                                     } else {
                                         val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}"))
                                         context.startActivity(intent)
                                     }
                                 } else {
                                     context.stopService(Intent(context, OverlayService::class.java))
-                                    isServiceRunning = false
+                                    isServiceActive = false
                                 }
                             }
                         )
-                    }
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Box(modifier = Modifier.fillMaxWidth().background(Color(0xFFF5F5F5), RoundedCornerShape(8.dp)).padding(8.dp), contentAlignment = Alignment.Center) {
-                        Text("Nhấn: Bật/Tắt Thước | Giữ: Cài đặt", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
                     }
                 }
             }
 
             Text("CẤU HÌNH THƯỚC", style = MaterialTheme.typography.labelLarge, color = Color.Gray, letterSpacing = 1.sp)
-
-            var numRulers by remember { mutableIntStateOf(rulerPrefs.getInt("num_rulers", 2)) }
-            var isCoupled by remember { mutableStateOf(rulerPrefs.getBoolean("is_coupled", true)) }
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -174,20 +163,20 @@ fun MainScreen() {
                         }
                         Row {
                             FilterChip(
-                                selected = numRulers == 1,
-                                onClick = { numRulers = 1; rulerPrefs.edit { putInt("num_rulers", 1) } },
+                                selected = uiState.numRulers == 1,
+                                onClick = { viewModel.updateNumRulers(1) },
                                 label = { Text("1 cây") }
                             )
                             Spacer(Modifier.width(8.dp))
                             FilterChip(
-                                selected = numRulers == 2,
-                                onClick = { numRulers = 2; rulerPrefs.edit { putInt("num_rulers", 2) } },
+                                selected = uiState.numRulers == 2,
+                                onClick = { viewModel.updateNumRulers(2) },
                                 label = { Text("2 cây") }
                             )
                         }
                     }
 
-                    if (numRulers == 2) {
+                    if (uiState.numRulers == 2) {
                         HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), thickness = 0.5.dp, color = Color.LightGray)
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -199,20 +188,42 @@ fun MainScreen() {
                                 Text("Ghép 2 thước", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                             }
                             Switch(
-                                checked = isCoupled,
-                                onCheckedChange = {
-                                    isCoupled = it
-                                    rulerPrefs.edit { putBoolean("is_coupled", it) }
-                                }
+                                checked = uiState.isCoupled,
+                                onCheckedChange = { viewModel.toggleCoupled(it) }
                             )
                         }
                     }
                 }
             }
 
-            // Ruler Unit Selector
-            var rulerUnit by remember { mutableIntStateOf(rulerPrefs.getInt("un", 0)) }
-            var isZoomEnabled by remember { mutableStateOf(rulerPrefs.getBoolean("is_zoom_enabled", true)) }
+            Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White), elevation = CardDefaults.cardElevation(defaultElevation = 2.dp), shape = RoundedCornerShape(16.dp)) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Default.Straighten, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Text("Định hướng thước", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        val orientations = listOf("Tự do" to 0, "Nằm ngang" to 1, "Thẳng đứng" to 2)
+                        orientations.forEach { (label, value) ->
+                            FilterChip(
+                                selected = uiState.fixedOrientation == value,
+                                onClick = { viewModel.updateFixedOrientation(value) },
+                                label = { Text(label, fontSize = 13.sp) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                    if (uiState.numRulers == 2) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "Định hướng chỉ áp dụng khi dùng 1 thước (khoá góc xoay)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.Gray
+                        )
+                    }
+                }
+            }
 
             Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White), elevation = CardDefaults.cardElevation(defaultElevation = 2.dp), shape = RoundedCornerShape(16.dp)) {
                 Column(modifier = Modifier.padding(16.dp)) {
@@ -225,11 +236,8 @@ fun MainScreen() {
                         val units = listOf("dp", "cm", "px", "sp")
                         units.forEachIndexed { i, label ->
                             FilterChip(
-                                selected = rulerUnit == i,
-                                onClick = {
-                                    rulerUnit = i
-                                    rulerPrefs.edit { putInt("un", i) }
-                                },
+                                selected = uiState.unit == i,
+                                onClick = { viewModel.updateUnit(i) },
                                 label = { Text(label, fontSize = 14.sp) },
                                 modifier = Modifier.weight(1f)
                             )
@@ -238,120 +246,80 @@ fun MainScreen() {
                     Spacer(Modifier.height(16.dp))
                     
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                        Text("Thu phóng: ${String.format("%.1f", rulerScale)}x", style = MaterialTheme.typography.bodySmall)
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text("Bật/Tắt", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
-                            Switch(
-                                checked = isZoomEnabled,
-                                onCheckedChange = {
-                                    isZoomEnabled = it
-                                    rulerPrefs.edit { 
-                                        putBoolean("is_zoom_enabled", it)
-                                        if (!it) {
-                                            // Khi tắt: lưu lại tỷ lệ hiện tại và đưa về 1.0x
-                                            putFloat("saved_sc", rulerScale)
-                                            putFloat("sc", 1.0f)
-                                        } else {
-                                            // Khi bật: khôi phục lại tỷ lệ đã lưu
-                                            val saved = rulerPrefs.getFloat("saved_sc", 1.0f)
-                                            putFloat("sc", saved)
-                                        }
-                                        apply()
-                                    }
-                                },
-                                modifier = Modifier.scale(0.8f)
-                            )
-                        }
+                        Text("Thu phóng: ${String.format("%.1f", uiState.scale)}x", style = MaterialTheme.typography.bodySmall)
+                        Switch(
+                            checked = uiState.isZoomEnabled,
+                            onCheckedChange = { viewModel.toggleZoom(it) },
+                            modifier = Modifier.scale(0.8f)
+                        )
                     }
                     
-                    if (isZoomEnabled) {
+                    if (uiState.isZoomEnabled) {
                         Slider(
-                            value = rulerScale,
-                            onValueChange = { 
-                                rulerScale = it
-                                rulerPrefs.edit { putFloat("sc", it) } 
-                            },
+                            value = uiState.scale,
+                            onValueChange = { viewModel.updateScale(it) },
                             valueRange = 0.25f..4.0f,
                             steps = 14
                         )
                     }
 
                     HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), thickness = 0.5.dp, color = Color.LightGray)
+                    Text("ĐỊNH HƯỚNG THƯỚC", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (uiState.numRulers == 1) {
+                            // Chế độ 1 thước
+                            FilterChip(
+                                selected = uiState.fixedOrientation == 0,
+                                onClick = { viewModel.updateFixedOrientation(0) },
+                                label = { Text("Xoay tự do", fontSize = 12.sp) },
+                                modifier = Modifier.weight(1f)
+                            )
+                            FilterChip(
+                                selected = uiState.fixedOrientation == 1,
+                                onClick = { viewModel.updateFixedOrientation(1) },
+                                label = { Text("Ngang (0°)", fontSize = 12.sp) },
+                                modifier = Modifier.weight(1f)
+                            )
+                            FilterChip(
+                                selected = uiState.fixedOrientation == 2,
+                                onClick = { viewModel.updateFixedOrientation(2) },
+                                label = { Text("Dọc (90°)", fontSize = 12.sp) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        } else {
+                            // Chế độ 2 thước
+                            FilterChip(
+                                selected = uiState.fixedOrientation == 0,
+                                onClick = { viewModel.updateFixedOrientation(0) },
+                                label = { Text("Xoay tự do", fontSize = 14.sp) },
+                                modifier = Modifier.weight(1f),
+                                leadingIcon = if (uiState.fixedOrientation == 0) { { Icon(Icons.Default.ScreenRotation, null, Modifier.size(16.dp)) } } else null
+                            )
+                            FilterChip(
+                                selected = uiState.fixedOrientation == 1,
+                                onClick = { viewModel.updateFixedOrientation(1) },
+                                label = { Text("Khóa góc (0° & 90°)", fontSize = 14.sp) },
+                                modifier = Modifier.weight(1f),
+                                leadingIcon = if (uiState.fixedOrientation == 1) { { Icon(Icons.Default.Lock, null, Modifier.size(16.dp)) } } else null
+                            )
+                        }
+                    }
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), thickness = 0.5.dp, color = Color.LightGray)
                     Button(
-                        onClick = { 
-                            rulerPrefs.edit {
-                                putFloat("hx", 150f); putFloat("hy", 150f); putFloat("hrot", 0f)
-                                putFloat("vx", 150f); putFloat("vy", 300f); putFloat("vrot", 90f)
-                                putFloat("sc", 1.0f); putFloat("saved_sc", 1.0f)
-                                putFloat("bl", 600 * context.resources.displayMetrics.density)
-                                apply()
-                            }
-                        },
+                        onClick = { viewModel.resetSettings() },
                         modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.onErrorContainer),
                         shape = RoundedCornerShape(8.dp)
                     ) {
                         Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
-                        Text("Đặt lại vị trí & Kích thước")
-                    }
-
-                    if (numRulers == 1) {
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), thickness = 0.5.dp, color = Color.LightGray)
-                        Text("CỐ ĐỊNH HƯỚNG", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
-                        Spacer(Modifier.height(8.dp))
-                        
-                        var fixedOrientation by remember { mutableIntStateOf(rulerPrefs.getInt("fixed_orientation", 0)) }
-                        
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            FilterChip(
-                                selected = fixedOrientation == 1,
-                                onClick = {
-                                    fixedOrientation = if (fixedOrientation == 1) 0 else 1
-                                    rulerPrefs.edit { putInt("fixed_orientation", fixedOrientation) }
-                                },
-                                label = { Text("Nằm ngang (0°)") },
-                                modifier = Modifier.weight(1f),
-                                leadingIcon = if (fixedOrientation == 1) { { Icon(Icons.Default.Check, null, Modifier.size(16.dp)) } } else null
-                            )
-                            FilterChip(
-                                selected = fixedOrientation == 2,
-                                onClick = {
-                                    fixedOrientation = if (fixedOrientation == 2) 0 else 2
-                                    rulerPrefs.edit { putInt("fixed_orientation", fixedOrientation) }
-                                },
-                                label = { Text("Thẳng đứng (90°)") },
-                                modifier = Modifier.weight(1f),
-                                leadingIcon = if (fixedOrientation == 2) { { Icon(Icons.Default.Check, null, Modifier.size(16.dp)) } } else null
-                            )
-                        }
+                        Text("Đặt lại toàn bộ")
                     }
                 }
-            }
-
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Default.Security, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                        Text("Quyền hiển thị trên ứng dụng khác", style = MaterialTheme.typography.bodyMedium)
-                    }
-                    Column(horizontalAlignment = Alignment.End) {
-                        Icon(if (hasOverlayPermission) Icons.Default.CheckCircle else Icons.Default.Cancel, contentDescription = null, tint = if (hasOverlayPermission) Color(0xFF4CAF50) else Color.Red, modifier = Modifier.size(18.dp))
-                        Text(if (hasOverlayPermission) "Đã cấp" else "Chưa cấp", style = MaterialTheme.typography.labelMedium, color = if (hasOverlayPermission) Color(0xFF8D6E63) else Color.Red)
-                    }
-                }
-            }
-
-            Column(modifier = Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Phiên bản 2.5.0 (Pro Edition)", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
             }
         }
     }
 }
-
-
